@@ -13,3 +13,19 @@
     "node-fetch": "^2.6.7"
   }
 }
+{
+  "name": "binary-sniper-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "framer-motion": "^10.12.16",
+    "axios": "^1.5.1",
+    "tailwindcss": "^4.3.2"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  }
+}
