@@ -4,6 +4,16 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
+// === ADD THESE (top of server/server.js) ===
+const rr = require('./resultResolver');
+const quotexAdapter = require('./quotexAdapter');
+const uiEnhancer = require('./uiEnhancer');
+const ats = require('./autoTimeSync');
+const pa = require('./patternAnalyzer');
+const strategyAdvanced = require('./strategyAdvanced');
+const manipulationDetector = require('./manipulationDetector');
+const aiLearner = require('./aiLearner');
+// ============================================
 const { computeSignalForSymbol } = require('./computeStrategy');
 const { startBinanceStream } = require('./brokerAdapters/binanceAdapter');
 const db = require('./db');
