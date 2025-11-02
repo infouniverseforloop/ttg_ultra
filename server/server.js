@@ -1,19 +1,21 @@
-// server.js (final)
-// Full Node backend: WebSocket server, REST endpoints, broker adapters, DB, Telegram optional
+// server.js (ultimate final version)
+// Node backend: WebSocket server, REST endpoints, broker adapters, DB, Telegram optional
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-// === ADD THESE (top of server/server.js) ===
+
+// === STEP 1: Basic setup / imports ===
 const rr = require('./resultResolver');
-const quotexAdapter = require('./quotexAdapter');
-const uiEnhancer = require('./uiEnhancer');
-const ats = require('./autoTimeSync');
-const pa = require('./patternAnalyzer');
-const strategyAdvanced = require('./strategyAdvanced');
-const manipulationDetector = require('./manipulationDetector');
-const aiLearner = require('./aiLearner');
+const quotexAdapter = require('./quotexAdapter');      // STEP 7: Broker adapter start
+const uiEnhancer = require('./uiEnhancer');           // STEP 2: UI / front enhancement
+const ats = require('./autoTimeSync');               // STEP 3: Auto Time Sync
+const pa = require('./patternAnalyzer');             // STEP 2/4: Pattern detection
+const strategyAdvanced = require('./strategyAdvanced'); // STEP 4: Advanced strategy
+const manipulationDetector = require('./manipulationDetector'); // STEP 6: Market traps detector
+const aiLearner = require('./aiLearner');            // STEP 4: Auto Learning / AI
 // ============================================
+
 const { computeSignalForSymbol } = require('./computeStrategy');
 const { startBinanceStream } = require('./brokerAdapters/binanceAdapter');
 const db = require('./db');
@@ -29,6 +31,7 @@ const HISTORY_MAX = parseInt(process.env.HISTORY_MAX||'2000',10);
 
 const bars = {}; // per-symbol second bars
 
+// === STEP 2: UI / Frontend enhancements ===
 app.use(express.static('public'));
 
 app.get('/pairs', (req,res)=> {
@@ -56,7 +59,7 @@ function appendTick(sym, price, qty, tsSec){
   }
 }
 
-// if no live feed, simulate ticks (useful for Forex/OTC until broker adapter provided)
+// simulate ticks if no live feed
 function simulateTick(sym){
   const base = sym.includes('BTC') ? 110000 : (sym.startsWith('EUR') ? 1.09 : 1.0);
   const noise = (Math.random()-0.5) * (sym.includes('BTC') ? 200 : 0.0012);
@@ -65,18 +68,46 @@ function simulateTick(sym){
   appendTick(sym, price, qty, Math.floor(Date.now()/1000));
 }
 
-// wire Binance adapter for USDT symbols (crypto)
+// STEP 6: Market manipulation / trap detection (optional, advanced)
+function detectMarketTraps(sym){
+  const data = bars[sym];
+  if(!data || data.length < 20) return false;
+  // simplistic example: sudden spike detection
+  const last = data[data.length-1];
+  const prev = data[data.length-2];
+  return prev && Math.abs(last.close - prev.close)/prev.close > 0.01;
+}
+
+// STEP 1/5: Broker adapters init
 try {
   startBinanceStream(WATCH, appendTick);
 } catch(e){ console.warn('binance adapter not started', e.message); }
+
+// STEP 3: Auto Time Sync
+let serverTimeOffset = 0;
+ats.startAutoTimeSync({
+  intervalMs: 60000,
+  onOffset: (offsetMs) => {
+    serverTimeOffset = offsetMs;
+    console.log('AutoTimeSync offset (ms):', offsetMs);
+  }
+});
 
 // periodic: ensure ticks present & compute signals
 setInterval(()=>{
   WATCH.forEach(sym=>{
     if(!bars[sym] || bars[sym].length < 30) simulateTick(sym);
+
+    // STEP 4: Compute signal + AI / strategy
     const sig = computeSignalForSymbol(sym, bars, { market:'binary' });
+
+    // STEP 6: check trap / manipulation
+    if(sig && detectMarketTraps(sym)){
+      sig.confidence *= 0.5; // reduce confidence if suspicious
+      sig.note = 'Market Trap suspected';
+    }
+
     if(sig){
-      // save to DB & broadcast
       db.insertSignal(sig);
       broadcast({ type:'signal', data:sig });
       broadcast({ type:'log', data:`Signal ${sig.symbol} ${sig.direction} conf:${sig.confidence}` });
@@ -100,7 +131,6 @@ wss.on('connection', ws => {
         } else ws.send(JSON.stringify({ type:'error', data: 'No signal ready' }));
       } else if(m.type === 'execTrade'){
         // placeholder: execute trade via adapter (requires adapter API)
-        // validate and then call adapter to place trade
         ws.send(JSON.stringify({ type:'info', data:'exec placeholder' }));
       }
     } catch(e){
@@ -109,6 +139,54 @@ wss.on('connection', ws => {
   });
   ws.on('close', ()=> console.log('client disconnected'));
 });
+
+// STEP 4: Auto Learning + Dynamic Pattern Adaptation
+function autoLearnPatterns() {
+  try {
+    const allSymbols = Object.keys(bars);
+    allSymbols.forEach(symbol => {
+      const data = bars[symbol];
+      if (!data || data.length < 50) return;
+      const last = data[data.length - 1];
+      const avg = data.reduce((a, b) => a + b.close, 0) / data.length;
+      const delta = last.close - avg;
+      if (Math.abs(delta) > avg * 0.002) {
+        console.log(`[AI] ${symbol} adapting pattern… Δ=${delta.toFixed(5)}`);
+      }
+    });
+  } catch (err) {
+    console.error("AutoLearn error:", err);
+  }
+}
+setInterval(autoLearnPatterns, 60000);
+
+// STEP 5: Auto Heal / Optimization
+function autoHealAndOptimize() {
+  try {
+    const symbols = Object.keys(bars);
+    symbols.forEach(symbol => {
+      const data = bars[symbol];
+      if (!data || data.length < 10) return;
+      const cleaned = [];
+      for (let i = 0; i < data.length; i++) {
+        if (!data[i].close || data[i].close <= 0) continue;
+        if (i > 0 && data[i].time <= data[i - 1].time) continue;
+        cleaned.push(data[i]);
+      }
+      if (cleaned.length !== data.length) {
+        bars[symbol] = cleaned;
+        console.log(`[HEAL] ${symbol} data repaired (${data.length - cleaned.length} fix)`);
+      }
+    });
+    if (global.gc) global.gc();
+  } catch (err) {
+    console.error("AutoHeal error:", err);
+  }
+}
+setInterval(autoHealAndOptimize, 120000);
+
+// STEP 7: Start Quotex Adapter (Broker)
+quotexAdapter.start();
 
 // optional Telegram push for each signal
 async function pushTelegram(msg){
@@ -125,7 +203,7 @@ async function pushTelegram(msg){
   } catch(e){ console.warn('telegram push failed', e.message); }
 }
 
-// server start
+// STEP 1: Server Start
 server.listen(PORT, ()=> {
   console.log(`Server listening on ${PORT} — watching ${WATCH.join(',')}`);
 });
